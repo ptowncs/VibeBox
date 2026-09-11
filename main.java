@@ -10,9 +10,8 @@ import java.util.Random;
 
 /**
  * Dragon Slayer RPG - Main Application Window
- * Designed for single-file execution in Main.java
- * Run directly with: java Main.java
- * Or compile: javac Main.java && java Main
+ * Run directly with: java DragonRPG.java
+ * Or compile: javac DragonRPG.java && java DragonRPG
  */
 public class Main extends JFrame {
 
@@ -409,9 +408,9 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         g2.drawString("Raw Materials Collected:", panelX + 30, panelY + 80);
 
         g2.setFont(new Font("SansSerif", Font.PLAIN, 14));
-        g2.drawString("• Wood: " + player.inventory.getOrDefault("Wood", 0), panelX + 40, panelY + 110);
-        g2.drawString("• Iron Ore: " + player.inventory.getOrDefault("Iron", 0), panelX + 180, panelY + 110);
-        g2.drawString("• Crystals: " + player.inventory.getOrDefault("Crystal", 0), panelX + 320, panelY + 110);
+        g2.drawString("â€¢ Wood: " + player.inventory.getOrDefault("Wood", 0), panelX + 40, panelY + 110);
+        g2.drawString("â€¢ Iron Ore: " + player.inventory.getOrDefault("Iron", 0), panelX + 180, panelY + 110);
+        g2.drawString("â€¢ Crystals: " + player.inventory.getOrDefault("Crystal", 0), panelX + 320, panelY + 110);
 
         g2.setColor(Color.YELLOW);
         g2.setFont(new Font("SansSerif", Font.BOLD, 16));
@@ -797,4 +796,6 @@ class FloatingText {
         g2.setFont(new Font("SansSerif", Font.BOLD, 14));
         g2.drawString(text, x, y);
     }
+
+
 }
