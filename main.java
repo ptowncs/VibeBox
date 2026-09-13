@@ -2,21 +2,15 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
-/**
- * Dragon Slayer RPG - Main Application Window
- * Run directly with: java DragonRPG.java
- * Or compile: javac DragonRPG.java && java DragonRPG
- */
 public class Main extends JFrame {
 
     public Main() {
-        setTitle("Dragon Slayer RPG - Forge & Battle");
+        setTitle("Dragon Slayer RPG - Level Progression");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
 
@@ -33,9 +27,6 @@ public class Main extends JFrame {
     }
 }
 
-/**
- * Main game panel handling rendering, key listener inputs, and game state loops.
- */
 class GamePanel extends JPanel implements ActionListener, KeyListener, MouseListener {
 
     public static final int WIDTH = 1000;
@@ -45,14 +36,17 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
     private Timer gameTimer;
     private Random random = new Random();
 
+    private Image backgroundArena;
+
+    // Game Progression
+    private int currentLevel = 1;
+
     // Input States
     private boolean keyLeft = false;
     private boolean keyRight = false;
     private boolean keySpace = false;
     private boolean keyCraft1 = false;
     private boolean keyCraft2 = false;
-    private boolean keyCraft3 = false;
-    private boolean keyPotion = false;
     private boolean keyRestart = false;
 
     // Overlay State
@@ -61,12 +55,12 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
     // Game Entities
     private Player player;
     private Dragon dragon;
-    private List<ResourceNode> resourceNodes = new ArrayList<>();
+    private List<LootDrop> lootDrops = new ArrayList<>();
     private List<Particle> particles = new ArrayList<>();
     private List<FloatingText> floatingTexts = new ArrayList<>();
     private List<Fireball> fireballs = new ArrayList<>();
 
-    private enum GameState { PLAYING, GAME_OVER, VICTORY }
+    private enum GameState { PLAYING, GAME_OVER, LEVEL_CLEAR }
     private GameState currentState = GameState.PLAYING;
 
     public GamePanel() {
@@ -76,31 +70,47 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         addKeyListener(this);
         addMouseListener(this);
 
-        initGame();
+        loadAssets();
+        
+        // Initial setup for Level 1
+        player = new Player(80, GROUND_Y - 80);
+        startLevel(1);
 
-        // Request keyboard focus immediately on window launch
         SwingUtilities.invokeLater(this::requestFocusInWindow);
 
-        // 60 FPS Game Loop (~16 ms per frame)
         gameTimer = new Timer(16, this);
         gameTimer.start();
     }
 
-    private void initGame() {
-        player = new Player(80, GROUND_Y - 50);
-        dragon = new Dragon(760, GROUND_Y - 140);
+    private void loadAssets() {
+        backgroundArena = new ImageIcon("sprites/DragonArenaScaled.png").getImage();
+    }
+
+    private void startLevel(int lvl) {
+        currentLevel = lvl;
         currentState = GameState.PLAYING;
 
-        // Initialize resource nodes across the arena
-        resourceNodes.clear();
-        resourceNodes.add(new ResourceNode(ResourceNode.Type.TREE, 180, GROUND_Y - 60));
-        resourceNodes.add(new ResourceNode(ResourceNode.Type.IRON_ORE, 320, GROUND_Y - 40));
-        resourceNodes.add(new ResourceNode(ResourceNode.Type.CRYSTAL, 460, GROUND_Y - 50));
-        resourceNodes.add(new ResourceNode(ResourceNode.Type.TREE, 580, GROUND_Y - 60));
+        // Reset Player Position & Heal on New Level
+        player.x = 80;
+        player.y = GROUND_Y - 80;
+        player.hp = player.maxHp;
 
+        // Scale Dragon HP and Damage based on level
+        dragon = new Dragon(700, GROUND_Y - 150);
+        dragon.hp = 250 + (lvl * 100);
+        dragon.maxHp = dragon.hp;
+
+        lootDrops.clear();
         particles.clear();
         floatingTexts.clear();
         fireballs.clear();
+    }
+
+    private void resetGameFull() {
+        Weapon savedWeapon = Weapon.WOODEN_CLUB;
+        player = new Player(80, GROUND_Y - 80);
+        player.equipWeapon(savedWeapon);
+        startLevel(1);
     }
 
     @Override
@@ -109,19 +119,25 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
             updatePlayer();
             updateDragon();
             updateFireballs();
+            updateLootDrops();
             updateParticles();
             updateFloatingTexts();
-            checkInteractions();
-        } else {
+        } else if (currentState == GameState.LEVEL_CLEAR) {
             if (keyRestart) {
-                initGame();
+                startLevel(currentLevel + 1);
+                keyRestart = false;
+            }
+        } else if (currentState == GameState.GAME_OVER) {
+            if (keyRestart) {
+                resetGameFull();
+                keyRestart = false;
             }
         }
         repaint();
     }
 
     private void updatePlayer() {
-        player.update();
+        player.update(WIDTH);
 
         if (keyLeft && !showInventory) {
             player.moveLeft();
@@ -132,50 +148,54 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         }
 
         if (keySpace && player.canAttack() && !showInventory) {
-            performPlayerAction();
-        }
-
-        if (keyPotion && player.potionCooldown <= 0) {
-            usePotion();
-            keyPotion = false;
+            performPlayerAttack();
         }
 
         if (showInventory) {
             if (keyCraft1) { craftItem(1); keyCraft1 = false; }
             if (keyCraft2) { craftItem(2); keyCraft2 = false; }
-            if (keyCraft3) { craftItem(3); keyCraft3 = false; }
         }
     }
 
-    private void performPlayerAction() {
+    private void performPlayerAttack() {
         player.triggerAttack();
 
-        boolean harvested = false;
-        for (ResourceNode node : resourceNodes) {
-            if (node.isAlive() && Math.abs(player.getCenterX() - node.getCenterX()) < 65) {
-                String resourceName = node.harvest();
-                if (resourceName != null) {
-                    player.inventory.put(resourceName, player.inventory.getOrDefault(resourceName, 0) + 1);
-                    floatingTexts.add(new FloatingText("+1 " + resourceName, node.getCenterX(), node.y - 10, Color.GREEN));
-                    spawnParticles(node.getCenterX(), node.y + 20, Color.ORANGE, 8);
-                    harvested = true;
-                    break;
-                }
+        int attackRange = player.getEquippedWeapon().range;
+        if (dragon.isAlive() && Math.abs(player.getRightX() - dragon.x) < attackRange) {
+            int damage = player.getEquippedWeapon().damage + random.nextInt(8);
+            dragon.takeDamage(damage);
+            floatingTexts.add(new FloatingText("-" + damage, dragon.x + 30, dragon.y + 40, Color.RED));
+            spawnParticles(dragon.x + 20, dragon.y + 60, Color.YELLOW, 10);
+
+            if (!dragon.isAlive()) {
+                handleBossDefeat();
             }
         }
+    }
 
-        if (!harvested) {
-            int attackRange = player.getEquippedWeapon().range;
-            if (dragon.isAlive() && Math.abs(player.getRightX() - dragon.x) < attackRange) {
-                int damage = player.getEquippedWeapon().damage + random.nextInt(6);
-                dragon.takeDamage(damage);
-                floatingTexts.add(new FloatingText("-" + damage, dragon.x + 30, dragon.y + 40, Color.RED));
-                spawnParticles(dragon.x + 20, dragon.y + 60, Color.YELLOW, 12);
+    private void handleBossDefeat() {
+        currentState = GameState.LEVEL_CLEAR;
+        spawnParticles(dragon.x + 80, dragon.y + 60, Color.MAGENTA, 40);
 
-                if (!dragon.isAlive()) {
-                    currentState = GameState.VICTORY;
-                    spawnParticles(dragon.x + 80, dragon.y + 60, Color.MAGENTA, 50);
-                }
+        // Drop materials where the dragon dies
+        int woodDrop = 3 + random.nextInt(4);
+        int ironDrop = 2 + random.nextInt(4);
+        int crystalDrop = 1 + random.nextInt(3);
+
+        lootDrops.add(new LootDrop("Wood", woodDrop, dragon.x + 20, GROUND_Y - 20));
+        lootDrops.add(new LootDrop("Iron", ironDrop, dragon.x + 70, GROUND_Y - 20));
+        lootDrops.add(new LootDrop("Crystal", crystalDrop, dragon.x + 120, GROUND_Y - 20));
+    }
+
+    private void updateLootDrops() {
+        Iterator<LootDrop> it = lootDrops.iterator();
+        while (it.hasNext()) {
+            LootDrop drop = it.next();
+            if (Math.abs(player.getCenterX() - drop.x) < 40) {
+                player.inventory.put(drop.type, player.inventory.getOrDefault(drop.type, 0) + drop.amount);
+                floatingTexts.add(new FloatingText("+" + drop.amount + " " + drop.type, player.x, player.y - 20, Color.GREEN));
+                spawnParticles(drop.x, drop.y, Color.CYAN, 8);
+                it.remove();
             }
         }
     }
@@ -183,42 +203,23 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
     private void craftItem(int choice) {
         Map<String, Integer> inv = player.inventory;
         if (choice == 1) {
-            if (inv.getOrDefault("Wood", 0) >= 5 && inv.getOrDefault("Iron", 0) >= 5) {
-                inv.put("Wood", inv.get("Wood") - 5);
-                inv.put("Iron", inv.get("Iron") - 5);
+            if (inv.getOrDefault("Wood", 0) >= 4 && inv.getOrDefault("Iron", 0) >= 4) {
+                inv.put("Wood", inv.get("Wood") - 4);
+                inv.put("Iron", inv.get("Iron") - 4);
                 player.equipWeapon(Weapon.IRON_SWORD);
                 floatingTexts.add(new FloatingText("Crafted Iron Sword!", player.x, player.y - 20, Color.CYAN));
             } else {
                 floatingTexts.add(new FloatingText("Missing Materials!", player.x, player.y - 20, Color.ORANGE));
             }
         } else if (choice == 2) {
-            if (inv.getOrDefault("Iron", 0) >= 10 && inv.getOrDefault("Crystal", 0) >= 6) {
-                inv.put("Iron", inv.get("Iron") - 10);
-                inv.put("Crystal", inv.get("Crystal") - 6);
+            if (inv.getOrDefault("Iron", 0) >= 8 && inv.getOrDefault("Crystal", 0) >= 5) {
+                inv.put("Iron", inv.get("Iron") - 8);
+                inv.put("Crystal", inv.get("Crystal") - 5);
                 player.equipWeapon(Weapon.DRAGON_SPEAR);
                 floatingTexts.add(new FloatingText("Crafted Dragon Spear!", player.x, player.y - 20, Color.MAGENTA));
             } else {
                 floatingTexts.add(new FloatingText("Missing Materials!", player.x, player.y - 20, Color.ORANGE));
             }
-        } else if (choice == 3) {
-            if (inv.getOrDefault("Wood", 0) >= 2 && inv.getOrDefault("Crystal", 0) >= 2) {
-                inv.put("Wood", inv.get("Wood") - 2);
-                inv.put("Crystal", inv.get("Crystal") - 2);
-                player.potions++;
-                floatingTexts.add(new FloatingText("+1 Health Potion!", player.x, player.y - 20, Color.GREEN));
-            } else {
-                floatingTexts.add(new FloatingText("Missing Materials!", player.x, player.y - 20, Color.ORANGE));
-            }
-        }
-    }
-
-    private void usePotion() {
-        if (player.potions > 0 && player.hp < player.maxHp) {
-            player.potions--;
-            player.hp = Math.min(player.maxHp, player.hp + 45);
-            player.potionCooldown = 30;
-            floatingTexts.add(new FloatingText("+45 HP", player.x, player.y - 20, Color.GREEN));
-            spawnParticles(player.getCenterX(), player.y + 20, Color.GREEN, 15);
         }
     }
 
@@ -227,14 +228,15 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
 
         if (dragon.shouldLaunchFireball()) {
             fireballs.add(new Fireball(dragon.x - 20, dragon.y + 40, -7.5f));
-            spawnParticles(dragon.x - 20, dragon.y + 40, Color.ORANGE, 10);
+            spawnParticles(dragon.x - 20, dragon.y + 40, Color.ORANGE, 8);
         }
 
         if (dragon.isAttackingClose() && Math.abs(player.getCenterX() - dragon.x) < 80) {
             if (dragon.damagePlayerTimer <= 0) {
-                player.takeDamage(18);
-                floatingTexts.add(new FloatingText("-18", player.x, player.y - 10, Color.RED));
-                spawnParticles(player.x, player.y + 20, Color.RED, 10);
+                int baseDamage = 15 + (currentLevel * 3);
+                player.takeDamage(baseDamage);
+                floatingTexts.add(new FloatingText("-" + baseDamage, player.x, player.y - 10, Color.RED));
+                spawnParticles(player.x, player.y + 20, Color.RED, 8);
                 dragon.damagePlayerTimer = 40;
                 if (!player.isAlive()) currentState = GameState.GAME_OVER;
             }
@@ -248,10 +250,11 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
             fb.update();
             spawnParticles((int)fb.x, (int)fb.y, Color.ORANGE, 1);
 
-            if (Math.abs(fb.x - player.getCenterX()) < 25 && Math.abs(fb.y - (player.y + 25)) < 30) {
-                player.takeDamage(22);
-                floatingTexts.add(new FloatingText("-22", player.x, player.y - 10, Color.RED));
-                spawnParticles((int)fb.x, (int)fb.y, Color.RED, 15);
+            if (Math.abs(fb.x - player.getCenterX()) < 30 && Math.abs(fb.y - (player.y + 30)) < 35) {
+                int fireballDamage = 18 + (currentLevel * 4);
+                player.takeDamage(fireballDamage);
+                floatingTexts.add(new FloatingText("-" + fireballDamage, player.x, player.y - 10, Color.RED));
+                spawnParticles((int)fb.x, (int)fb.y, Color.RED, 12);
                 it.remove();
                 if (!player.isAlive()) currentState = GameState.GAME_OVER;
                 continue;
@@ -279,12 +282,6 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         }
     }
 
-    private void checkInteractions() {
-        for (ResourceNode node : resourceNodes) {
-            node.update();
-        }
-    }
-
     private void spawnParticles(int x, int y, Color color, int count) {
         for (int i = 0; i < count; i++) {
             particles.add(new Particle(x, y, color));
@@ -297,19 +294,27 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        drawEnvironment(g2d);
-
-        for (ResourceNode node : resourceNodes) {
-            node.draw(g2d);
-            if (node.isAlive() && Math.abs(player.getCenterX() - node.getCenterX()) < 65) {
-                g2d.setColor(Color.YELLOW);
-                g2d.setFont(new Font("SansSerif", Font.BOLD, 12));
-                g2d.drawString("[SPACE] Harvest", node.getCenterX() - 40, node.y - 18);
-            }
+        // Draw Arena Background
+        if (backgroundArena != null) {
+            g2d.drawImage(backgroundArena, 0, 0, WIDTH, HEIGHT, this);
+        } else {
+            drawEnvironmentFallback(g2d);
         }
 
-        dragon.draw(g2d);
-        player.draw(g2d);
+        // Draw Loot Drops
+        for (LootDrop drop : lootDrops) {
+            drop.draw(g2d);
+        }
+
+        // Draw Dragon Sprite
+        if (dragon.isAlive() && dragon.getSprite() != null) {
+            g2d.drawImage(dragon.getSprite(), dragon.x, dragon.y, dragon.width, dragon.height, this);
+        }
+
+        // Draw Player Sprite Animation
+        if (player.isAlive() && player.getCurrentImage() != null) {
+            g2d.drawImage(player.getCurrentImage(), player.x, player.y, player.width, player.height, this);
+        }
 
         for (Fireball fb : fireballs) fb.draw(g2d);
         for (Particle p : particles) p.draw(g2d);
@@ -326,35 +331,23 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         }
     }
 
-    private void drawEnvironment(Graphics2D g2) {
+    private void drawEnvironmentFallback(Graphics2D g2) {
         GradientPaint skyGradient = new GradientPaint(0, 0, new Color(15, 20, 35), 0, GROUND_Y, new Color(40, 30, 50));
         g2.setPaint(skyGradient);
         g2.fillRect(0, 0, WIDTH, GROUND_Y);
 
-        g2.setColor(new Color(30, 25, 45));
-        Polygon mountain1 = new Polygon(new int[]{0, 200, 400}, new int[]{GROUND_Y, 220, GROUND_Y}, 3);
-        Polygon mountain2 = new Polygon(new int[]{300, 550, 800}, new int[]{GROUND_Y, 180, GROUND_Y}, 3);
-        Polygon mountain3 = new Polygon(new int[]{650, 850, 1050}, new int[]{GROUND_Y, 250, GROUND_Y}, 3);
-        g2.fill(mountain1);
-        g2.fill(mountain2);
-        g2.fill(mountain3);
-
         GradientPaint groundGradient = new GradientPaint(0, GROUND_Y, new Color(60, 45, 35), 0, HEIGHT, new Color(25, 18, 12));
         g2.setPaint(groundGradient);
         g2.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
-
-        g2.setColor(new Color(80, 120, 50));
-        g2.fillRect(0, GROUND_Y, 650, 8);
-        g2.setColor(new Color(180, 60, 30));
-        g2.fillRect(650, GROUND_Y, 350, 8);
     }
 
     private void drawHUD(Graphics2D g2) {
+        // Player HUD
         g2.setColor(new Color(0, 0, 0, 160));
-        g2.fillRoundRect(15, 15, 250, 75, 12, 12);
+        g2.fillRoundRect(15, 15, 260, 75, 12, 12);
         g2.setColor(Color.WHITE);
         g2.setFont(new Font("SansSerif", Font.BOLD, 12));
-        g2.drawString("HERO HEALTH", 25, 32);
+        g2.drawString("HERO HEALTH - LEVEL " + currentLevel, 25, 32);
 
         g2.setColor(Color.DARK_GRAY);
         g2.fillRoundRect(25, 38, 200, 16, 8, 8);
@@ -366,11 +359,12 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         g2.drawString(player.hp + " / " + player.maxHp, 105, 51);
         g2.drawString("Weapon: " + player.getEquippedWeapon().name + " (" + player.getEquippedWeapon().damage + " DMG)", 25, 75);
 
+        // Dragon HUD
         g2.setColor(new Color(0, 0, 0, 160));
         g2.fillRoundRect(350, 15, 300, 55, 12, 12);
         g2.setColor(Color.RED);
         g2.setFont(new Font("SansSerif", Font.BOLD, 14));
-        g2.drawString("ANCIENT DRAGON BOSS", 420, 32);
+        g2.drawString("DRAGON BOSS (STAGE " + currentLevel + ")", 410, 32);
 
         g2.setColor(Color.DARK_GRAY);
         g2.fillRoundRect(370, 38, 260, 18, 8, 8);
@@ -378,18 +372,19 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         g2.setColor(new Color(220, 40, 40));
         g2.fillRoundRect(370, 38, (int) (260 * dragonHpPercent), 18, 8, 8);
 
+        // Control Hints
         g2.setColor(new Color(0, 0, 0, 180));
         g2.fillRect(0, HEIGHT - 35, WIDTH, 35);
         g2.setColor(Color.LIGHT_GRAY);
         g2.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        g2.drawString("Controls: [A/D or Arrows] Move | [SPACE] Attack / Mine | [I] Inventory & Crafting | [H] Drink Potion (" + player.potions + " left)", 20, HEIGHT - 12);
+        g2.drawString("Controls: [A/D or Arrows] Move | [SPACE] Attack | [I] Inventory & Forge", 20, HEIGHT - 12);
     }
 
     private void drawInventoryOverlay(Graphics2D g2) {
         g2.setColor(new Color(0, 0, 0, 200));
         g2.fillRect(0, 0, WIDTH, HEIGHT);
 
-        int panelW = 550, panelH = 380;
+        int panelW = 550, panelH = 340;
         int panelX = (WIDTH - panelW) / 2;
         int panelY = (HEIGHT - panelH) / 2;
 
@@ -401,28 +396,27 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
 
         g2.setColor(Color.CYAN);
         g2.setFont(new Font("SansSerif", Font.BOLD, 22));
-        g2.drawString("INVENTORY & CRAFTING FORGE", panelX + 110, panelY + 40);
+        g2.drawString("INVENTORY & FORGE", panelX + 160, panelY + 40);
 
         g2.setFont(new Font("SansSerif", Font.BOLD, 15));
         g2.setColor(Color.WHITE);
-        g2.drawString("Raw Materials Collected:", panelX + 30, panelY + 80);
+        g2.drawString("Defeated Boss Drops Stockpile:", panelX + 30, panelY + 80);
 
         g2.setFont(new Font("SansSerif", Font.PLAIN, 14));
-        g2.drawString("â€¢ Wood: " + player.inventory.getOrDefault("Wood", 0), panelX + 40, panelY + 110);
-        g2.drawString("â€¢ Iron Ore: " + player.inventory.getOrDefault("Iron", 0), panelX + 180, panelY + 110);
-        g2.drawString("â€¢ Crystals: " + player.inventory.getOrDefault("Crystal", 0), panelX + 320, panelY + 110);
+        g2.drawString("- Wood: " + player.inventory.getOrDefault("Wood", 0), panelX + 40, panelY + 110);
+        g2.drawString("- Iron: " + player.inventory.getOrDefault("Iron", 0), panelX + 180, panelY + 110);
+        g2.drawString("- Crystals: " + player.inventory.getOrDefault("Crystal", 0), panelX + 320, panelY + 110);
 
         g2.setColor(Color.YELLOW);
         g2.setFont(new Font("SansSerif", Font.BOLD, 16));
-        g2.drawString("Available Recipes (Press Key to Craft):", panelX + 30, panelY + 155);
+        g2.drawString("Craft Next Tier Weapon:", panelX + 30, panelY + 155);
 
-        drawRecipeBox(g2, panelX + 30, panelY + 170, "[1] Iron Sword", "5 Wood, 5 Iron", "+35 Damage", player.getEquippedWeapon() == Weapon.IRON_SWORD);
-        drawRecipeBox(g2, panelX + 30, panelY + 230, "[2] Dragon Spear", "10 Iron, 6 Crystals", "+70 Damage (High Range)", player.getEquippedWeapon() == Weapon.DRAGON_SPEAR);
-        drawRecipeBox(g2, panelX + 30, panelY + 290, "[3] Health Potion", "2 Wood, 2 Crystals", "Restores 45 HP", false);
+        drawRecipeBox(g2, panelX + 30, panelY + 170, "[1] Iron Sword", "4 Wood, 4 Iron", "+35 Damage", player.getEquippedWeapon() == Weapon.IRON_SWORD);
+        drawRecipeBox(g2, panelX + 30, panelY + 230, "[2] Dragon Spear", "8 Iron, 5 Crystals", "+70 Damage", player.getEquippedWeapon() == Weapon.DRAGON_SPEAR);
 
         g2.setColor(Color.LIGHT_GRAY);
         g2.setFont(new Font("SansSerif", Font.ITALIC, 13));
-        g2.drawString("Press [I] to Close Inventory", panelX + 180, panelY + 360);
+        g2.drawString("Press [I] to Close Inventory", panelX + 180, panelY + 315);
     }
 
     private void drawRecipeBox(Graphics2D g2, int x, int y, String name, String reqs, String effect, boolean equipped) {
@@ -447,24 +441,24 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         g2.setColor(new Color(0, 0, 0, 210));
         g2.fillRect(0, 0, WIDTH, HEIGHT);
 
-        g2.setFont(new Font("SansSerif", Font.BOLD, 42));
-        if (currentState == GameState.VICTORY) {
+        g2.setFont(new Font("SansSerif", Font.BOLD, 36));
+        if (currentState == GameState.LEVEL_CLEAR) {
             g2.setColor(Color.GREEN);
-            g2.drawString("VICTORY! THE DRAGON IS SLAIN!", 160, 260);
-            g2.setFont(new Font("SansSerif", Font.PLAIN, 20));
+            g2.drawString("STAGE " + currentLevel + " CLEARED!", 320, 240);
+            g2.setFont(new Font("SansSerif", Font.PLAIN, 18));
             g2.setColor(Color.WHITE);
-            g2.drawString("You successfully forged powerful weapons and saved the realm!", 210, 310);
+            g2.drawString("The boss dropped crafting materials! Open [I] Inventory to upgrade.", 220, 290);
+            g2.setColor(Color.YELLOW);
+            g2.drawString("Press [R] to Start Stage " + (currentLevel + 1), 370, 360);
         } else {
             g2.setColor(Color.RED);
-            g2.drawString("GAME OVER - YOU WERE VANQUISHED", 130, 260);
-            g2.setFont(new Font("SansSerif", Font.PLAIN, 20));
+            g2.drawString("GAME OVER", 390, 240);
+            g2.setFont(new Font("SansSerif", Font.PLAIN, 18));
             g2.setColor(Color.WHITE);
-            g2.drawString("Gather raw materials and craft stronger gear before attacking!", 200, 310);
+            g2.drawString("You reached Stage " + currentLevel + ".", 400, 290);
+            g2.setColor(Color.YELLOW);
+            g2.drawString("Press [R] to Restart From Level 1", 340, 360);
         }
-
-        g2.setFont(new Font("SansSerif", Font.BOLD, 18));
-        g2.setColor(Color.YELLOW);
-        g2.drawString("Press [R] to Restart", 410, 380);
     }
 
     @Override
@@ -476,8 +470,6 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         if (code == KeyEvent.VK_I || code == KeyEvent.VK_E) showInventory = !showInventory;
         if (code == KeyEvent.VK_1) keyCraft1 = true;
         if (code == KeyEvent.VK_2) keyCraft2 = true;
-        if (code == KeyEvent.VK_3) keyCraft3 = true;
-        if (code == KeyEvent.VK_H) keyPotion = true;
         if (code == KeyEvent.VK_R) keyRestart = true;
     }
 
@@ -489,8 +481,6 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         if (code == KeyEvent.VK_SPACE) keySpace = false;
         if (code == KeyEvent.VK_1) keyCraft1 = false;
         if (code == KeyEvent.VK_2) keyCraft2 = false;
-        if (code == KeyEvent.VK_3) keyCraft3 = false;
-        if (code == KeyEvent.VK_H) keyPotion = false;
         if (code == KeyEvent.VK_R) keyRestart = false;
     }
 
@@ -518,208 +508,24 @@ enum Weapon {
     }
 }
 
-class Player {
+class LootDrop {
+    public String type;
+    public int amount;
     public int x, y;
-    public int width = 36, height = 50;
-    public int hp = 100, maxHp = 100;
-    public int potions = 1;
-    public int potionCooldown = 0;
 
-    private float vx = 0;
-    private int attackAnimTimer = 0;
-    private int attackCooldown = 0;
-    private Weapon equippedWeapon = Weapon.WOODEN_CLUB;
-    public Map<String, Integer> inventory = new HashMap<>();
-
-    public Player(int x, int y) {
-        this.x = x;
-        this.y = y;
-        inventory.put("Wood", 0);
-        inventory.put("Iron", 0);
-        inventory.put("Crystal", 0);
-    }
-
-    public void update() {
-        x += vx;
-        if (x < 10) x = 10;
-        if (x > GamePanel.WIDTH - 120) x = GamePanel.WIDTH - 120;
-
-        if (attackAnimTimer > 0) attackAnimTimer--;
-        if (attackCooldown > 0) attackCooldown--;
-        if (potionCooldown > 0) potionCooldown--;
-    }
-
-    public void moveLeft() { vx = -4.5f; }
-    public void moveRight() { vx = 4.5f; }
-    public void stop() { vx = 0; }
-
-    public boolean canAttack() { return attackCooldown <= 0; }
-
-    public void triggerAttack() {
-        attackAnimTimer = 12;
-        attackCooldown = 18;
-    }
-
-    public void equipWeapon(Weapon w) { this.equippedWeapon = w; }
-    public Weapon getEquippedWeapon() { return equippedWeapon; }
-
-    public void takeDamage(int amt) { hp = Math.max(0, hp - amt); }
-    public boolean isAlive() { return hp > 0; }
-
-    public int getCenterX() { return x + width / 2; }
-    public int getRightX() { return x + width; }
-
-    public void draw(Graphics2D g2) {
-        g2.setColor(new Color(50, 110, 210));
-        g2.fillRoundRect(x, y + 15, width, height - 15, 8, 8);
-
-        g2.setColor(new Color(240, 190, 150));
-        g2.fillOval(x + 6, y, 24, 24);
-
-        g2.setColor(Color.GRAY);
-        g2.fillRect(x + 4, y - 2, 28, 10);
-
-        if (attackAnimTimer > 0) {
-            g2.setColor(Color.YELLOW);
-            g2.setStroke(new BasicStroke(4));
-            g2.drawArc(x + 20, y - 10, equippedWeapon.range, 60, -30, 90);
-        } else {
-            g2.setColor(Color.LIGHT_GRAY);
-            g2.fillRect(x + width, y + 20, 15, 4);
-        }
-    }
-}
-
-class Dragon {
-    public int x, y;
-    public int width = 180, height = 140;
-    public int hp = 350, maxHp = 350;
-
-    public int attackTimer = 0;
-    public int damagePlayerTimer = 0;
-    private int wingFlapOffset = 0;
-
-    public Dragon(int x, int y) {
-        this.x = x;
-        this.y = y;
-    }
-
-    public void update() {
-        attackTimer++;
-        wingFlapOffset = (int)(Math.sin(System.currentTimeMillis() * 0.005) * 12);
-        if (damagePlayerTimer > 0) damagePlayerTimer--;
-    }
-
-    public boolean shouldLaunchFireball() {
-        if (attackTimer >= 140) {
-            attackTimer = 0;
-            return true;
-        }
-        return false;
-    }
-
-    public boolean isAttackingClose() { return damagePlayerTimer <= 0; }
-    public void takeDamage(int amt) { hp = Math.max(0, hp - amt); }
-    public boolean isAlive() { return hp > 0; }
-
-    public void draw(Graphics2D g2) {
-        if (!isAlive()) return;
-
-        g2.setColor(new Color(120, 20, 30));
-        Polygon leftWing = new Polygon(
-                new int[]{x + 40, x - 30, x + 30},
-                new int[]{y + 40, y - 40 + wingFlapOffset, y + 60}, 3
-        );
-        g2.fill(leftWing);
-
-        g2.setColor(new Color(160, 25, 35));
-        g2.fillOval(x, y + 30, width - 40, height - 30);
-
-        g2.fillOval(x - 30, y, 60, 50);
-
-        g2.setColor(Color.YELLOW);
-        g2.fillOval(x - 20, y + 12, 10, 10);
-        g2.setColor(Color.BLACK);
-        g2.fillOval(x - 18, y + 14, 4, 6);
-
-        g2.setColor(Color.DARK_GRAY);
-        Polygon horn = new Polygon(new int[]{x + 10, x + 25, x + 5}, new int[]{y + 5, y - 25, y}, 3);
-        g2.fill(horn);
-
-        g2.setColor(new Color(140, 20, 30));
-        g2.setStroke(new BasicStroke(12));
-        g2.drawLine(x + width - 50, y + height - 30, x + width + 20, y + height - 10);
-    }
-}
-
-class ResourceNode {
-    public enum Type { TREE, IRON_ORE, CRYSTAL }
-
-    public Type type;
-    public int x, y;
-    public int remainingYield = 3;
-    public int respawnTimer = 0;
-
-    public ResourceNode(Type type, int x, int y) {
+    public LootDrop(String type, int amount, int x, int y) {
         this.type = type;
+        this.amount = amount;
         this.x = x;
         this.y = y;
     }
 
-    public void update() {
-        if (remainingYield <= 0) {
-            respawnTimer++;
-            if (respawnTimer >= 400) {
-                remainingYield = 3;
-                respawnTimer = 0;
-            }
-        }
-    }
-
-    public boolean isAlive() { return remainingYield > 0; }
-    public int getCenterX() { return x + 20; }
-
-    public String harvest() {
-        if (remainingYield > 0) {
-            remainingYield--;
-            switch (type) {
-                case TREE: return "Wood";
-                case IRON_ORE: return "Iron";
-                case CRYSTAL: return "Crystal";
-            }
-        }
-        return null;
-    }
-
     public void draw(Graphics2D g2) {
-        if (remainingYield <= 0) {
-            g2.setColor(Color.GRAY);
-            g2.fillRect(x + 10, y + 30, 20, 10);
-            return;
-        }
-
-        switch (type) {
-            case TREE:
-                g2.setColor(new Color(100, 60, 30));
-                g2.fillRect(x + 15, y + 20, 12, 30);
-                g2.setColor(new Color(40, 140, 50));
-                g2.fillOval(x, y - 10, 42, 42);
-                break;
-            case IRON_ORE:
-                g2.setColor(new Color(110, 115, 125));
-                g2.fillOval(x, y + 10, 40, 25);
-                g2.setColor(Color.LIGHT_GRAY);
-                g2.fillOval(x + 10, y + 15, 10, 8);
-                break;
-            case CRYSTAL:
-                g2.setColor(new Color(0, 220, 255));
-                Polygon crystal = new Polygon(
-                        new int[]{x + 20, x + 32, x + 20, x + 8},
-                        new int[]{y - 5, y + 20, y + 35, y + 20}, 4
-                );
-                g2.fill(crystal);
-                break;
-        }
+        g2.setColor(Color.YELLOW);
+        g2.fillOval(x, y, 16, 16);
+        g2.setColor(Color.WHITE);
+        g2.setFont(new Font("SansSerif", Font.BOLD, 10));
+        g2.drawString(type.substring(0, 1), x + 5, y + 12);
     }
 }
 
@@ -796,6 +602,4 @@ class FloatingText {
         g2.setFont(new Font("SansSerif", Font.BOLD, 14));
         g2.drawString(text, x, y);
     }
-
-
 }
