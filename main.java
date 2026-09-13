@@ -60,7 +60,10 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
     private List<FloatingText> floatingTexts = new ArrayList<>();
     private List<Fireball> fireballs = new ArrayList<>();
 
-    private enum GameState { PLAYING, GAME_OVER, LEVEL_CLEAR }
+    private enum GameState {
+        PLAYING, GAME_OVER, LEVEL_CLEAR
+    }
+
     private GameState currentState = GameState.PLAYING;
 
     public GamePanel() {
@@ -71,7 +74,7 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         addMouseListener(this);
 
         loadAssets();
-        
+
         // Initial setup for Level 1
         player = new Player(80, GROUND_Y - 80);
         startLevel(1);
@@ -152,16 +155,27 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         }
 
         if (showInventory) {
-            if (keyCraft1) { craftItem(1); keyCraft1 = false; }
-            if (keyCraft2) { craftItem(2); keyCraft2 = false; }
+            if (keyCraft1) {
+                craftItem(1);
+                keyCraft1 = false;
+            }
+            if (keyCraft2) {
+                craftItem(2);
+                keyCraft2 = false;
+            }
         }
     }
 
     private void performPlayerAttack() {
         player.triggerAttack();
 
+        // Calculate attack range using fixed coordinates without altering player
+        // dimensions
         int attackRange = player.getEquippedWeapon().range;
-        if (dragon.isAlive() && Math.abs(player.getRightX() - dragon.x) < attackRange) {
+        int playerRightEdge = player.x + player.width;
+        int dragonRightEdge = dragon.x + dragon.width;
+
+        if (dragon.isAlive() && (playerRightEdge + attackRange >= dragon.x) && (player.x <= dragonRightEdge)) {
             int damage = player.getEquippedWeapon().damage + random.nextInt(8);
             dragon.takeDamage(damage);
             floatingTexts.add(new FloatingText("-" + damage, dragon.x + 30, dragon.y + 40, Color.RED));
@@ -193,7 +207,8 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
             LootDrop drop = it.next();
             if (Math.abs(player.getCenterX() - drop.x) < 40) {
                 player.inventory.put(drop.type, player.inventory.getOrDefault(drop.type, 0) + drop.amount);
-                floatingTexts.add(new FloatingText("+" + drop.amount + " " + drop.type, player.x, player.y - 20, Color.GREEN));
+                floatingTexts.add(
+                        new FloatingText("+" + drop.amount + " " + drop.type, player.x, player.y - 20, Color.GREEN));
                 spawnParticles(drop.x, drop.y, Color.CYAN, 8);
                 it.remove();
             }
@@ -238,7 +253,8 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
                 floatingTexts.add(new FloatingText("-" + baseDamage, player.x, player.y - 10, Color.RED));
                 spawnParticles(player.x, player.y + 20, Color.RED, 8);
                 dragon.damagePlayerTimer = 40;
-                if (!player.isAlive()) currentState = GameState.GAME_OVER;
+                if (!player.isAlive())
+                    currentState = GameState.GAME_OVER;
             }
         }
     }
@@ -248,19 +264,21 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         while (it.hasNext()) {
             Fireball fb = it.next();
             fb.update();
-            spawnParticles((int)fb.x, (int)fb.y, Color.ORANGE, 1);
+            spawnParticles((int) fb.x, (int) fb.y, Color.ORANGE, 1);
 
             if (Math.abs(fb.x - player.getCenterX()) < 30 && Math.abs(fb.y - (player.y + 30)) < 35) {
                 int fireballDamage = 18 + (currentLevel * 4);
                 player.takeDamage(fireballDamage);
                 floatingTexts.add(new FloatingText("-" + fireballDamage, player.x, player.y - 10, Color.RED));
-                spawnParticles((int)fb.x, (int)fb.y, Color.RED, 12);
+                spawnParticles((int) fb.x, (int) fb.y, Color.RED, 12);
                 it.remove();
-                if (!player.isAlive()) currentState = GameState.GAME_OVER;
+                if (!player.isAlive())
+                    currentState = GameState.GAME_OVER;
                 continue;
             }
 
-            if (fb.x < 0) it.remove();
+            if (fb.x < 0)
+                it.remove();
         }
     }
 
@@ -269,7 +287,8 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         while (it.hasNext()) {
             Particle p = it.next();
             p.update();
-            if (p.isDead()) it.remove();
+            if (p.isDead())
+                it.remove();
         }
     }
 
@@ -278,7 +297,8 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         while (it.hasNext()) {
             FloatingText ft = it.next();
             ft.update();
-            if (ft.isDead()) it.remove();
+            if (ft.isDead())
+                it.remove();
         }
     }
 
@@ -312,13 +332,23 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         }
 
         // Draw Player Sprite Animation
-        if (player.isAlive() && player.getCurrentImage() != null) {
-            g2d.drawImage(player.getCurrentImage(), player.x, player.y, player.width, player.height, this);
+        if (player.isAlive()) {
+            Image playerImg = player.getCurrentImage();
+            if (playerImg != null) {
+                g2d.drawImage(playerImg, player.x, player.y, null);
+            } else {
+                // Fallback if image fails to load
+                g2d.setColor(Color.BLUE);
+                g2d.fillRect(player.x, player.y, player.width, player.height);
+            }
         }
 
-        for (Fireball fb : fireballs) fb.draw(g2d);
-        for (Particle p : particles) p.draw(g2d);
-        for (FloatingText ft : floatingTexts) ft.draw(g2d);
+        for (Fireball fb : fireballs)
+            fb.draw(g2d);
+        for (Particle p : particles)
+            p.draw(g2d);
+        for (FloatingText ft : floatingTexts)
+            ft.draw(g2d);
 
         drawHUD(g2d);
 
@@ -336,7 +366,8 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         g2.setPaint(skyGradient);
         g2.fillRect(0, 0, WIDTH, GROUND_Y);
 
-        GradientPaint groundGradient = new GradientPaint(0, GROUND_Y, new Color(60, 45, 35), 0, HEIGHT, new Color(25, 18, 12));
+        GradientPaint groundGradient = new GradientPaint(0, GROUND_Y, new Color(60, 45, 35), 0, HEIGHT,
+                new Color(25, 18, 12));
         g2.setPaint(groundGradient);
         g2.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
     }
@@ -357,7 +388,8 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
 
         g2.setColor(Color.WHITE);
         g2.drawString(player.hp + " / " + player.maxHp, 105, 51);
-        g2.drawString("Weapon: " + player.getEquippedWeapon().name + " (" + player.getEquippedWeapon().damage + " DMG)", 25, 75);
+        g2.drawString("Weapon: " + player.getEquippedWeapon().name + " (" + player.getEquippedWeapon().damage + " DMG)",
+                25, 75);
 
         // Dragon HUD
         g2.setColor(new Color(0, 0, 0, 160));
@@ -411,8 +443,10 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
         g2.setFont(new Font("SansSerif", Font.BOLD, 16));
         g2.drawString("Craft Next Tier Weapon:", panelX + 30, panelY + 155);
 
-        drawRecipeBox(g2, panelX + 30, panelY + 170, "[1] Iron Sword", "4 Wood, 4 Iron", "+35 Damage", player.getEquippedWeapon() == Weapon.IRON_SWORD);
-        drawRecipeBox(g2, panelX + 30, panelY + 230, "[2] Dragon Spear", "8 Iron, 5 Crystals", "+70 Damage", player.getEquippedWeapon() == Weapon.DRAGON_SPEAR);
+        drawRecipeBox(g2, panelX + 30, panelY + 170, "[1] Iron Sword", "4 Wood, 4 Iron", "+35 Damage",
+                player.getEquippedWeapon() == Weapon.IRON_SWORD);
+        drawRecipeBox(g2, panelX + 30, panelY + 230, "[2] Dragon Spear", "8 Iron, 5 Crystals", "+70 Damage",
+                player.getEquippedWeapon() == Weapon.DRAGON_SPEAR);
 
         g2.setColor(Color.LIGHT_GRAY);
         g2.setFont(new Font("SansSerif", Font.ITALIC, 13));
@@ -464,32 +498,63 @@ class GamePanel extends JPanel implements ActionListener, KeyListener, MouseList
     @Override
     public void keyPressed(KeyEvent e) {
         int code = e.getKeyCode();
-        if (code == KeyEvent.VK_A || code == KeyEvent.VK_LEFT) keyLeft = true;
-        if (code == KeyEvent.VK_D || code == KeyEvent.VK_RIGHT) keyRight = true;
-        if (code == KeyEvent.VK_SPACE) keySpace = true;
-        if (code == KeyEvent.VK_I || code == KeyEvent.VK_E) showInventory = !showInventory;
-        if (code == KeyEvent.VK_1) keyCraft1 = true;
-        if (code == KeyEvent.VK_2) keyCraft2 = true;
-        if (code == KeyEvent.VK_R) keyRestart = true;
+        if (code == KeyEvent.VK_A || code == KeyEvent.VK_LEFT)
+            keyLeft = true;
+        if (code == KeyEvent.VK_D || code == KeyEvent.VK_RIGHT)
+            keyRight = true;
+        if (code == KeyEvent.VK_SPACE)
+            keySpace = true;
+        if (code == KeyEvent.VK_I || code == KeyEvent.VK_E)
+            showInventory = !showInventory;
+        if (code == KeyEvent.VK_1)
+            keyCraft1 = true;
+        if (code == KeyEvent.VK_2)
+            keyCraft2 = true;
+        if (code == KeyEvent.VK_R)
+            keyRestart = true;
     }
 
     @Override
     public void keyReleased(KeyEvent e) {
         int code = e.getKeyCode();
-        if (code == KeyEvent.VK_A || code == KeyEvent.VK_LEFT) keyLeft = false;
-        if (code == KeyEvent.VK_D || code == KeyEvent.VK_RIGHT) keyRight = false;
-        if (code == KeyEvent.VK_SPACE) keySpace = false;
-        if (code == KeyEvent.VK_1) keyCraft1 = false;
-        if (code == KeyEvent.VK_2) keyCraft2 = false;
-        if (code == KeyEvent.VK_R) keyRestart = false;
+        if (code == KeyEvent.VK_A || code == KeyEvent.VK_LEFT)
+            keyLeft = false;
+        if (code == KeyEvent.VK_D || code == KeyEvent.VK_RIGHT)
+            keyRight = false;
+        if (code == KeyEvent.VK_SPACE)
+            keySpace = false;
+        if (code == KeyEvent.VK_1)
+            keyCraft1 = false;
+        if (code == KeyEvent.VK_2)
+            keyCraft2 = false;
+        if (code == KeyEvent.VK_R)
+            keyRestart = false;
     }
 
-    @Override public void keyTyped(KeyEvent e) {}
-    @Override public void mouseClicked(MouseEvent e) { requestFocusInWindow(); }
-    @Override public void mousePressed(MouseEvent e) {}
-    @Override public void mouseReleased(MouseEvent e) {}
-    @Override public void mouseEntered(MouseEvent e) {}
-    @Override public void mouseExited(MouseEvent e) {}
+    @Override
+    public void keyTyped(KeyEvent e) {
+    }
+
+    @Override
+    public void mouseClicked(MouseEvent e) {
+        requestFocusInWindow();
+    }
+
+    @Override
+    public void mousePressed(MouseEvent e) {
+    }
+
+    @Override
+    public void mouseReleased(MouseEvent e) {
+    }
+
+    @Override
+    public void mouseEntered(MouseEvent e) {
+    }
+
+    @Override
+    public void mouseExited(MouseEvent e) {
+    }
 }
 
 enum Weapon {
@@ -539,7 +604,9 @@ class Fireball {
         this.vx = vx;
     }
 
-    public void update() { x += vx; }
+    public void update() {
+        x += vx;
+    }
 
     public void draw(Graphics2D g2) {
         g2.setColor(Color.ORANGE);
@@ -569,7 +636,9 @@ class Particle {
         life--;
     }
 
-    public boolean isDead() { return life <= 0; }
+    public boolean isDead() {
+        return life <= 0;
+    }
 
     public void draw(Graphics2D g2) {
         g2.setColor(color);
@@ -595,7 +664,9 @@ class FloatingText {
         life--;
     }
 
-    public boolean isDead() { return life <= 0; }
+    public boolean isDead() {
+        return life <= 0;
+    }
 
     public void draw(Graphics2D g2) {
         g2.setColor(color);

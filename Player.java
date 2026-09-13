@@ -2,6 +2,10 @@ import java.awt.*;
 import java.util.HashMap;
 import java.util.Map;
 import javax.swing.ImageIcon;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 
 public class Player {
     public int x, y;
@@ -85,28 +89,56 @@ public class Player {
     public int getCenterX() { return x + width / 2; }
     public int getRightX() { return x + width; }
 
-    public Image getCurrentImage() {
-        // Attack Animations
+public Image getCurrentImage() {
+        Image rawSprite = null;
+
+        // 1. Determine raw sprite frame from animation state map
         if (attackAnimTimer > 0) {
             if (equippedWeapon == Weapon.DRAGON_SPEAR) {
-                return animations.get("attack_spear");
+                rawSprite = animations.get("attack_spear");
             } else if (equippedWeapon == Weapon.IRON_SWORD) {
-                return animations.get("attack_dragonblade");
+                rawSprite = animations.get("attack_dragonblade");
+            } else {
+                rawSprite = facingRight ? animations.get("attack_right") : animations.get("attack_left");
             }
-            return facingRight ? animations.get("attack_right") : animations.get("attack_left");
+        } else if (vx > 0) {
+            rawSprite = animations.get("run_right");
+        } else if (vx < 0) {
+            rawSprite = animations.get("run_left");
+        } else {
+            if (equippedWeapon == Weapon.DRAGON_SPEAR) {
+                rawSprite = animations.get("idle_spear");
+            } else if (equippedWeapon == Weapon.IRON_SWORD) {
+                rawSprite = animations.get("idle_dragonblade");
+            } else {
+                rawSprite = facingRight ? animations.get("idle_right") : animations.get("idle_left");
+            }
         }
 
-        // Run Animations
-        if (vx > 0) return animations.get("run_right");
-        if (vx < 0) return animations.get("run_left");
-
-        // Idle Animations
-        if (equippedWeapon == Weapon.DRAGON_SPEAR) {
-            return animations.get("idle_spear");
-        } else if (equippedWeapon == Weapon.IRON_SWORD) {
-            return animations.get("idle_dragonblade");
+        // Fallback check if specific animation key wasn't loaded
+        if (rawSprite == null) {
+            rawSprite = animations.get("idle_right");
+            if (rawSprite == null) return null;
         }
 
-        return facingRight ? animations.get("idle_right") : animations.get("idle_left");
+        // Safety check to avoid runtime errors on invalid canvas dimensions
+        if (width <= 0 || height <= 0) {
+            return rawSprite;
+        }
+
+        // 2. Scale the animation frame dynamically to match player width and height
+        BufferedImage scaledImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = scaledImage.createGraphics();
+
+        // Anti-aliasing and interpolation settings for smooth sprite scaling
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        // Draw sprite matching exact target dimensions
+        g2.drawImage(rawSprite, 0, 0, width, height, null);
+        g2.dispose();
+
+        return scaledImage;
     }
 }
