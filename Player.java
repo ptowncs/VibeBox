@@ -8,9 +8,13 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 
 public class Player {
+    public static final int SPRITE_WIDTH = 96;
+    public static final int SPRITE_HEIGHT = 96;
+    private static final int DEFAULT_ATTACK_CANVAS_WIDTH = 192;
+
     public int x, y;
     // Fixed character size across all states
-    public int width = 96, height = 96; 
+    public final int width = SPRITE_WIDTH, height = SPRITE_HEIGHT;
     public int hp = 100, maxHp = 100;
 
     private float vx = 0;
@@ -89,17 +93,26 @@ public class Player {
     public int getCenterX() { return x + width / 2; }
     public int getRightX() { return x + width; }
 
+    public int getCurrentImageXOffset() {
+        if (attackAnimTimer > 0 && equippedWeapon == Weapon.WOODEN_CLUB) {
+            return facingRight ? -12 : -108;
+        }
+        return 0;
+    }
+
 public Image getCurrentImage() {
         Image rawSprite = null;
+        boolean defaultAttack = false;
 
         // 1. Determine raw sprite frame from animation state map
         if (attackAnimTimer > 0) {
             if (equippedWeapon == Weapon.DRAGON_SPEAR) {
-                rawSprite = animations.get("attack_spear");
+                rawSprite = animations.get("attack_polearm");
             } else if (equippedWeapon == Weapon.IRON_SWORD) {
                 rawSprite = animations.get("attack_dragonblade");
             } else {
                 rawSprite = facingRight ? animations.get("attack_right") : animations.get("attack_left");
+                defaultAttack = true;
             }
         } else if (vx > 0) {
             rawSprite = animations.get("run_right");
@@ -121,13 +134,8 @@ public Image getCurrentImage() {
             if (rawSprite == null) return null;
         }
 
-        // Safety check to avoid runtime errors on invalid canvas dimensions
-        if (width <= 0 || height <= 0) {
-            return rawSprite;
-        }
-
-        // 2. Scale the animation frame dynamically to match player width and height
-        BufferedImage scaledImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        int canvasWidth = defaultAttack ? DEFAULT_ATTACK_CANVAS_WIDTH : SPRITE_WIDTH;
+        BufferedImage scaledImage = new BufferedImage(canvasWidth, SPRITE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g2 = scaledImage.createGraphics();
 
         // Anti-aliasing and interpolation settings for smooth sprite scaling
@@ -135,8 +143,24 @@ public Image getCurrentImage() {
         g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        // Draw sprite matching exact target dimensions
-        g2.drawImage(rawSprite, 0, 0, width, height, null);
+        if (defaultAttack) {
+            // Keep the full 32x16 attack strip. The body is 12x16, while the
+            // remaining pixels contain the weapon extending outward.
+            g2.drawImage(rawSprite, 0, 0, DEFAULT_ATTACK_CANVAS_WIDTH, SPRITE_HEIGHT,
+                    0, 16, 32, 32, null);
+        } else {
+            int sourceWidth = rawSprite.getWidth(null);
+            int sourceHeight = rawSprite.getHeight(null);
+            if (sourceWidth > 0 && sourceHeight > 0) {
+                float fitScale = Math.min((float) SPRITE_WIDTH / sourceWidth,
+                        (float) SPRITE_HEIGHT / sourceHeight);
+                int drawWidth = Math.round(sourceWidth * fitScale);
+                int drawHeight = Math.round(sourceHeight * fitScale);
+                int drawX = (SPRITE_WIDTH - drawWidth) / 2;
+                int drawY = SPRITE_HEIGHT - drawHeight;
+                g2.drawImage(rawSprite, drawX, drawY, drawWidth, drawHeight, null);
+            }
+        }
         g2.dispose();
 
         return scaledImage;
