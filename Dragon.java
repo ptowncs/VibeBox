@@ -1,5 +1,6 @@
 import java.awt.*;
 import javax.swing.ImageIcon;
+import java.awt.image.BufferedImage;
 
 public class Dragon {
     public int x, y;
@@ -13,7 +14,12 @@ public class Dragon {
     public Dragon(int x, int y) {
         this.x = x;
         this.y = y;
-        this.sprite = new ImageIcon("sprites/Dragon.png").getImage();
+        Image sheet = new ImageIcon("sprites/Dragon.png").getImage();
+        BufferedImage idleFrame = new BufferedImage(230, 165, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = idleFrame.createGraphics();
+        g2.drawImage(sheet, 0, 0, 230, 165, 0, 38, 230, 203, null);
+        g2.dispose();
+        this.sprite = idleFrame;
     }
 
     public void update() {
