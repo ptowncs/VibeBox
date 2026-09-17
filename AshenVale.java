@@ -388,6 +388,7 @@ public class AshenVale extends JPanel implements ActionListener, KeyListener {
     }
 
     void drawPlayer(Graphics2D g) {
+        if (p.action.equals("dead")) return;
         double bob = p.grounded && Math.abs(p.vx) > 10 ? Math.sin(p.animT * 14) * 3 : 0;
         double x = p.x, y = p.y + bob;
         boolean flash = p.hurtFlash > 0 && ((int) (p.hurtFlash * 30) % 2 == 0);
@@ -443,6 +444,7 @@ public class AshenVale extends JPanel implements ActionListener, KeyListener {
     }
 
     void drawEnemy(Graphics2D g, Enemy e) {
+        if (e.dead) return;
         double s = e.scale;
         AffineTransform old = g.getTransform();
         g.translate(e.x, e.y);
